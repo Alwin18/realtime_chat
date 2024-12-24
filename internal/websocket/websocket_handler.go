@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/gofiber/contrib/websocket"
+	"github.com/websoket-chat/internal/model"
+	"github.com/websoket-chat/internal/repository"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/log"
@@ -27,13 +29,15 @@ type Hub struct {
 	clientRegisterChannel chan *clientInfo     // Register clients
 	clientRemoveChannel   chan *websocket.Conn // Remove clients
 	broadcastMessage      chan Message         // Broadcast messages
+	chatMessageRepository *repository.ChatMessageRepository
 }
 
-func NewHub() *Hub {
+func NewHub(chatMessageRepository *repository.ChatMessageRepository) *Hub {
 	return &Hub{
 		clientRegisterChannel: make(chan *clientInfo),
 		clientRemoveChannel:   make(chan *websocket.Conn),
 		broadcastMessage:      make(chan Message),
+		chatMessageRepository: chatMessageRepository,
 	}
 }
 
@@ -41,11 +45,30 @@ func (h *Hub) Run() {
 	for {
 		select {
 		case info := <-h.clientRegisterChannel:
-			h.clients.Store(info.senderID, info.conn)
+			// Get senderId from the WebSocket query parameters
+			senderID := info.conn.Query("senderId", "")
+			recivierID := info.conn.Query("receiverId", "")
+			if senderID == "" {
+				log.Warn("No senderId found in WebSocket query parameters")
+				continue
+			}
+
+			// Remove the previous connection with the same senderId if it exists
+			if oldConn, ok := h.clients.Load(senderID); ok {
+				olderRecivierID := oldConn.(*websocket.Conn).Query("receiverId", "")
+				log.Infof("Closing old connection for senderId %s and receiverId %s", senderID, olderRecivierID)
+				oldConn.(*websocket.Conn).Close()
+				h.clients.Delete(senderID)
+			}
+
+			// Store the new connection by senderId
+			h.clients.Store(senderID, info.conn)
+			log.Infof("New connection for senderId %s and receiverId %s", senderID, recivierID)
 
 		case conn := <-h.clientRemoveChannel:
 			h.clients.Range(func(key, value interface{}) bool {
 				if value.(*websocket.Conn) == conn {
+					log.Info("Closing connection for senderId ", key)
 					h.clients.Delete(key)
 					return false
 				}
@@ -53,6 +76,7 @@ func (h *Hub) Run() {
 			})
 
 		case message := <-h.broadcastMessage:
+			// Broadcast message to specific receiver
 			if value, ok := h.clients.Load(message.ReceiverID); ok {
 				conn := value.(*websocket.Conn)
 				err := conn.WriteJSON(message)
@@ -109,6 +133,19 @@ func DirectMessage(hub *Hub) func(*websocket.Conn) {
 					Content:    string(msg),
 					Timestamp:  time.Now().Format(time.RFC3339),
 				}
+
+				// Save message to database
+				err := hub.chatMessageRepository.SaveMessage(model.ChatMessage{
+					SenderID:   message.SenderID,
+					ReceiverID: message.ReceiverID,
+					Content:    message.Content,
+					Timestamp:  time.Now(),
+				})
+				if err != nil {
+					log.Errorf("Error saving message to DB: %v", err)
+				}
+
+				// broadcast the message to specific receiver
 				hub.broadcastMessage <- message
 			}
 		}
