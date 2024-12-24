@@ -29,17 +29,18 @@ func main() {
 	}
 
 	// Migrate database tables
-	err = config.MigrateTable(db)
-	if err != nil {
-		log.Fatal("Error migrating tables: ", err)
-		return
-	}
+	// err = config.MigrateTable(db)
+	// if err != nil {
+	// 	log.Fatal("Error migrating tables: ", err)
+	// 	return
+	// }
 
 	// Initialize Fiber app
 	app := fiber.New()
 
 	// Initialize the repository for chat messages
 	chatMessageRepo := repository.NewChatMessageRepository(db)
+	contactRepo := repository.NewContactRepository(db)
 
 	// Register WebSocket route with AllowUpgrade middleware
 	hub := websocketHandler.NewHub(chatMessageRepo)
@@ -49,12 +50,13 @@ func main() {
 	app.Get("/ws/direct", websocketHandler.AllowUpgrade, websocket.New(websocketHandler.DirectMessage(hub)))
 
 	// Initialize API handler
-	apiHandler := api.NewApiHandler(chatMessageRepo)
+	apiHandler := api.NewApiHandler(chatMessageRepo, contactRepo)
 
 	// API route for chat history
 	v1 := app.Group("/api/v1")
 	v1.Get("hello", api.HelloHandler)
 	v1.Get("chat-history", apiHandler.GetChatHistory)
+	v1.Get("contacts", apiHandler.GetContactByCakupan)
 
 	// Start the server
 	log.Info("Server started on port 3000")

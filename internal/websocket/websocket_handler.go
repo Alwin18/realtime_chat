@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"strconv"
 	"sync"
 	"time"
 
@@ -119,9 +120,19 @@ func DirectMessage(hub *Hub) func(*websocket.Conn) {
 
 			if messageType == websocket.TextMessage {
 				// Save message to database
-				err := hub.chatMessageRepository.SaveMessage(model.ChatMessage{
-					SenderID:   conn.Query("senderId"),
-					ReceiverID: conn.Query("receiverId", ""),
+				senderId, err := strconv.ParseInt(conn.Query("senderId"), 10, 64)
+				if err != nil {
+					log.Errorf("Error parsing senderId: %v", err)
+				}
+
+				receiverId, err := strconv.ParseInt(conn.Query("receiverId"), 10, 64)
+				if err != nil {
+					log.Errorf("Error parsing senderId: %v", err)
+				}
+
+				err = hub.chatMessageRepository.SaveMessage(model.ChatMessage{
+					SenderID:   senderId,
+					ReceiverID: receiverId,
 					Content:    string(msg),
 					Timestamp:  utils.ConvertToJakartaTime(time.Now()),
 				})
@@ -131,7 +142,7 @@ func DirectMessage(hub *Hub) func(*websocket.Conn) {
 
 				// broadcast the message to specific receiver
 				hub.broadcastMessage <- Message{
-					SenderID:   conn.Query("senderId"),
+					SenderID:   conn.Query("senderId", ""),
 					ReceiverID: conn.Query("receiverId", ""),
 					Content:    string(msg),
 					Timestamp:  utils.ConvertToJakartaTime(time.Now()).Format(time.RFC3339),

@@ -52,6 +52,7 @@ func MigrateTable(db *gorm.DB) (err error) {
 	// AutoMigrate will create tables, missing columns, and missing indexes
 	err = db.AutoMigrate(
 		&model.ChatMessage{},
+		&model.Contact{},
 	)
 	if err != nil {
 		log.Fatalf("failed to auto migrate database: %v", err)
