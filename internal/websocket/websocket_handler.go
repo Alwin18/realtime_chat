@@ -7,6 +7,7 @@ import (
 	"github.com/gofiber/contrib/websocket"
 	"github.com/websoket-chat/internal/model"
 	"github.com/websoket-chat/internal/repository"
+	"github.com/websoket-chat/utils"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/log"
@@ -45,25 +46,16 @@ func (h *Hub) Run() {
 	for {
 		select {
 		case info := <-h.clientRegisterChannel:
-			// Get senderId from the WebSocket query parameters
-			senderID := info.conn.Query("senderId", "")
-			recivierID := info.conn.Query("receiverId", "")
-			if senderID == "" {
-				log.Warn("No senderId found in WebSocket query parameters")
-				continue
-			}
-
 			// Remove the previous connection with the same senderId if it exists
-			if oldConn, ok := h.clients.Load(senderID); ok {
-				olderRecivierID := oldConn.(*websocket.Conn).Query("receiverId", "")
-				log.Infof("Closing old connection for senderId %s and receiverId %s", senderID, olderRecivierID)
+			if oldConn, ok := h.clients.Load(info.conn.Query("senderId", "")); ok {
+				log.Infof("Closing old connection for senderId %s and receiverId %s", info.conn.Query("senderId", ""), oldConn.(*websocket.Conn).Query("receiverId", ""))
 				oldConn.(*websocket.Conn).Close()
-				h.clients.Delete(senderID)
+				h.clients.Delete(info.conn.Query("senderId", ""))
 			}
 
 			// Store the new connection by senderId
-			h.clients.Store(senderID, info.conn)
-			log.Infof("New connection for senderId %s and receiverId %s", senderID, recivierID)
+			h.clients.Store(info.conn.Query("senderId", ""), info.conn)
+			log.Infof("New connection for senderId %s and receiverId %s", info.conn.Query("senderId", ""), info.conn.Query("receiverId", ""))
 
 		case conn := <-h.clientRemoveChannel:
 			h.clients.Range(func(key, value interface{}) bool {
@@ -78,11 +70,10 @@ func (h *Hub) Run() {
 		case message := <-h.broadcastMessage:
 			// Broadcast message to specific receiver
 			if value, ok := h.clients.Load(message.ReceiverID); ok {
-				conn := value.(*websocket.Conn)
-				err := conn.WriteJSON(message)
+				err := value.(*websocket.Conn).WriteJSON(message)
 				if err != nil {
 					log.Errorf("Error sending message to %s: %v", message.ReceiverID, err)
-					conn.Close()
+					value.(*websocket.Conn).Close()
 					h.clients.Delete(message.ReceiverID)
 				}
 			}
@@ -105,48 +96,46 @@ func DirectMessage(hub *Hub) func(*websocket.Conn) {
 		}()
 
 		// Get senderId and receiverId from query parameters
-		senderID := conn.Query("senderId")
-		receiverID := conn.Query("receiverId")
-		if senderID == "" || receiverID == "" {
+		if conn.Query("senderId") == "" || conn.Query("receiverId", "") == "" {
 			log.Error("Missing senderId or receiverId")
 			conn.Close()
 			return
 		}
 
 		// Register client
-		hub.clientRegisterChannel <- &clientInfo{conn: conn, senderID: senderID}
+		hub.clientRegisterChannel <- &clientInfo{
+			conn:     conn,
+			senderID: conn.Query("senderId"),
+		}
 
 		// Read messages
 		for {
 			messageType, msg, err := conn.ReadMessage()
 			if err != nil {
-				log.Errorf("Error reading message from %s: %v", senderID, err)
+				log.Errorf("Error reading message from %s: %v", conn.Query("senderId"), err)
 				hub.clientRemoveChannel <- conn
 				return
 			}
 
 			if messageType == websocket.TextMessage {
-				// Broadcast message to the receiver
-				message := Message{
-					SenderID:   senderID,
-					ReceiverID: receiverID,
-					Content:    string(msg),
-					Timestamp:  time.Now().Format(time.RFC3339),
-				}
-
 				// Save message to database
 				err := hub.chatMessageRepository.SaveMessage(model.ChatMessage{
-					SenderID:   message.SenderID,
-					ReceiverID: message.ReceiverID,
-					Content:    message.Content,
-					Timestamp:  time.Now(),
+					SenderID:   conn.Query("senderId"),
+					ReceiverID: conn.Query("receiverId", ""),
+					Content:    string(msg),
+					Timestamp:  utils.ConvertToJakartaTime(time.Now()),
 				})
 				if err != nil {
 					log.Errorf("Error saving message to DB: %v", err)
 				}
 
 				// broadcast the message to specific receiver
-				hub.broadcastMessage <- message
+				hub.broadcastMessage <- Message{
+					SenderID:   conn.Query("senderId"),
+					ReceiverID: conn.Query("receiverId", ""),
+					Content:    string(msg),
+					Timestamp:  utils.ConvertToJakartaTime(time.Now()).Format(time.RFC3339),
+				}
 			}
 		}
 	}

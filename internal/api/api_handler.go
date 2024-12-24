@@ -22,16 +22,13 @@ func HelloHandler(c *fiber.Ctx) error {
 }
 
 func (a *ApiHandler) GetChatHistory(c *fiber.Ctx) error {
-	senderID := c.Query("senderId")
-	receiverID := c.Query("receiverId")
-
-	if senderID == "" || receiverID == "" {
+	if c.Query("senderId", "") == "" || c.Query("receiverId", "") == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "senderId and receiverId are required",
 		})
 	}
 
-	response, err := a.chatMessageRepo.GetChatHistory(senderID, receiverID)
+	response, err := a.chatMessageRepo.GetChatHistory(c.Query("senderId", ""), c.Query("receiverId", ""))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
