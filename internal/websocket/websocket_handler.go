@@ -1,11 +1,11 @@
 package websocket
 
 import (
-	"strconv"
 	"sync"
 	"time"
 
 	"github.com/gofiber/contrib/websocket"
+	"github.com/google/uuid"
 	"github.com/websoket-chat/internal/model"
 	"github.com/websoket-chat/internal/repository"
 	"github.com/websoket-chat/utils"
@@ -15,10 +15,12 @@ import (
 )
 
 type Message struct {
-	SenderID   string `json:"senderId"`
-	ReceiverID string `json:"receiverId"`
-	Content    string `json:"content"`
-	Timestamp  string `json:"timestamp"`
+	SenderID      uuid.UUID `json:"senderId"`
+	ReceiverID    uuid.UUID `json:"receiverId"`
+	Content       string    `json:"content"`
+	AttachmentURL string    `json:"attachmentUrl"`
+	IsRead        bool      `json:"isRead"`
+	SentAt        time.Time `json:"timestamp"`
 }
 
 type clientInfo struct {
@@ -118,34 +120,55 @@ func DirectMessage(hub *Hub) func(*websocket.Conn) {
 				return
 			}
 
+			// convert msg to struct
+			message, err := utils.BytesToStruct[Message](msg)
+			if err != nil {
+				log.Errorf("Error reading message from %s: %v", conn.Query("senderId"), err)
+				hub.clientRemoveChannel <- conn
+				return
+			}
+
 			if messageType == websocket.TextMessage {
 				// Save message to database
-				senderId, err := strconv.ParseInt(conn.Query("senderId"), 10, 64)
-				if err != nil {
-					log.Errorf("Error parsing senderId: %v", err)
+				senderID, err := utils.StringToUUID(conn.Query("senderId"))
+				if err == nil {
+					log.Errorf("Error insert message to database: %v", err)
+					hub.clientRemoveChannel <- conn
+					return
 				}
 
-				receiverId, err := strconv.ParseInt(conn.Query("receiverId"), 10, 64)
-				if err != nil {
-					log.Errorf("Error parsing senderId: %v", err)
+				receiverID, err := utils.StringToUUID(conn.Query("senderId"))
+				if err == nil {
+					log.Errorf("Error insert message to database: %v", err)
+					hub.clientRemoveChannel <- conn
+					return
 				}
 
-				err = hub.chatMessageRepository.SaveMessage(model.ChatMessage{
-					SenderID:   senderId,
-					ReceiverID: receiverId,
-					Content:    string(msg),
-					Timestamp:  utils.ConvertToJakartaTime(time.Now()),
+				if message.AttachmentURL != "" {
+					// TODO: save base64 file into s3
+				}
+
+				err = hub.chatMessageRepository.SaveMessage(model.Message{
+					SenderID:      senderID,
+					ReceiverID:    receiverID,
+					Content:       &message.Content,
+					AttachmentURL: &message.AttachmentURL,
+					IsRead:        false,
+					SentAt:        utils.ConvertToJakartaTime(time.Now()),
 				})
 				if err != nil {
-					log.Errorf("Error saving message to DB: %v", err)
+					log.Errorf("Error insert message to database: %v", err)
+					hub.clientRemoveChannel <- conn
+					return
 				}
 
 				// broadcast the message to specific receiver
 				hub.broadcastMessage <- Message{
-					SenderID:   conn.Query("senderId", ""),
-					ReceiverID: conn.Query("receiverId", ""),
-					Content:    string(msg),
-					Timestamp:  utils.ConvertToJakartaTime(time.Now()).Format(time.RFC3339),
+					SenderID:      senderID,
+					Content:       message.Content,
+					AttachmentURL: message.AttachmentURL,
+					IsRead:        false,
+					SentAt:        utils.ConvertToJakartaTime(time.Now()),
 				}
 			}
 		}

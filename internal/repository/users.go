@@ -13,9 +13,9 @@ func NewContactRepository(db *gorm.DB) *ContactRepository {
 	return &ContactRepository{db: db.Debug()}
 }
 
-func (repo *ContactRepository) GetContactByCakupan(gedungId int64, role string) ([]model.Contact, error) {
-	var contacts []model.Contact
-	query := repo.db.Model(&model.Contact{})
+func (repo *ContactRepository) GetContactByCakupan(gedungId int64, role string) ([]model.User, error) {
+	var contacts []model.User
+	query := repo.db.Model(&model.User{})
 
 	if gedungId != 0 {
 		query = query.Where("gedung_id = ?", gedungId)

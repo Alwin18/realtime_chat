@@ -51,8 +51,9 @@ func ConnectDatabase(cfg *Config) *gorm.DB {
 func MigrateTable(db *gorm.DB) (err error) {
 	// AutoMigrate will create tables, missing columns, and missing indexes
 	err = db.AutoMigrate(
-		&model.ChatMessage{},
-		&model.Contact{},
+		&model.Message{},
+		&model.User{},
+		&model.Role{},
 	)
 	if err != nil {
 		log.Fatalf("failed to auto migrate database: %v", err)

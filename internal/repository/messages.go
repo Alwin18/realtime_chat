@@ -13,12 +13,12 @@ func NewChatMessageRepository(db *gorm.DB) *ChatMessageRepository {
 	return &ChatMessageRepository{db: db.Debug()}
 }
 
-func (repo *ChatMessageRepository) SaveMessage(message model.ChatMessage) error {
+func (repo *ChatMessageRepository) SaveMessage(message model.Message) error {
 	return repo.db.Create(&message).Error
 }
 
-func (repo *ChatMessageRepository) GetChatHistory(senderID string, receiverID string) ([]model.ChatMessage, error) {
-	var messages []model.ChatMessage
+func (repo *ChatMessageRepository) GetChatHistory(senderID string, receiverID string) ([]model.Message, error) {
+	var messages []model.Message
 	err := repo.db.Where(
 		"(sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)",
 		senderID, receiverID, receiverID, senderID,
