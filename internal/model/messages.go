@@ -22,3 +22,11 @@ type Message struct {
 func (Message) TableName() string {
 	return "messages"
 }
+
+type HistoryChat struct {
+	MessageID     int64     `json:"message_id"`
+	Content       string    `json:"content"`
+	AttachmentURL string    `json:"attachment_url"`
+	SentAt        time.Time `json:"sent_at"`
+	IsRead        bool      `json:"is_read"`
+}

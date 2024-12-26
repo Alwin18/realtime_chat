@@ -29,11 +29,11 @@ func main() {
 	}
 
 	// Migrate database tables
-	// err = config.MigrateTable(db)
-	// if err != nil {
-	// 	log.Fatal("Error migrating tables: ", err)
-	// 	return
-	// }
+	err = config.MigrateTable(db)
+	if err != nil {
+		log.Fatal("Error migrating tables: ", err)
+		return
+	}
 
 	// Initialize Fiber app
 	app := fiber.New()

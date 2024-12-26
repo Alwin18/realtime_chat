@@ -1,9 +1,6 @@
 package api
 
 import (
-	"errors"
-	"strconv"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/websoket-chat/internal/repository"
 )
@@ -30,57 +27,101 @@ func HelloHandler(c *fiber.Ctx) error {
 }
 
 func (a *ApiHandler) GetChatHistory(c *fiber.Ctx) error {
-	if c.Query("senderId", "") == "" || c.Query("receiverId", "") == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"messages": "senderId and receiverId are required",
-			"code":     fiber.StatusBadRequest,
-		})
+	var body GetChatHistoryRequest
+	if err := c.QueryParser(&body); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(NewResponseWithoutData(
+			"failed request: "+err.Error(),
+			fiber.StatusBadRequest,
+			false,
+		))
 	}
 
-	response, err := a.chatMessageRepo.GetChatHistory(c.Query("senderId", ""), c.Query("receiverId", ""))
+	if body.SenderID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(NewResponseWithoutData(
+			"sender_id is required",
+			fiber.StatusBadRequest,
+			false,
+		))
+	}
+
+	if body.ReceiverID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(NewResponseWithoutData(
+			"receiver_id is required",
+			fiber.StatusBadRequest,
+			false,
+		))
+	}
+
+	response, err := a.chatMessageRepo.GetChatHistory(body.SenderID, body.ReceiverID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
-			"code":  fiber.StatusInternalServerError,
-		})
+		return c.Status(fiber.StatusInternalServerError).JSON(NewResponseWithoutData(
+			"failed get list chats: "+err.Error(),
+			fiber.StatusInternalServerError,
+			false,
+		))
 	}
 
-	return c.JSON(fiber.Map{
-		"data":    response,
-		"status":  true,
-		"message": "success get history chat",
-		"code":    fiber.StatusOK,
-	})
+	return c.JSON(NewBaseResponse(
+		true,
+		"success get list contacts",
+		fiber.StatusOK,
+		response,
+	))
 }
 
 func (a *ApiHandler) GetContactByCakupan(c *fiber.Ctx) error {
-	if c.Query("gedung_id", "") == "" || c.Query("role", "") == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"messages": "gedung_id and role are required",
-			"code":     fiber.StatusBadRequest,
-		})
+	var body GetContactByCakupanRequest
+	if err := c.QueryParser(&body); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(NewResponseWithoutData(
+			"failed request: "+err.Error(),
+			fiber.StatusBadRequest,
+			false,
+		))
 	}
 
-	gedungId, err := strconv.ParseInt(c.Query("gedung_id", ""), 10, 64)
+	if body.GedungID == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(NewResponseWithoutData(
+			"gedung_id is required",
+			fiber.StatusBadRequest,
+			false,
+		))
+	}
+
+	if body.Role == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(NewResponseWithoutData(
+			"role is required",
+			fiber.StatusBadRequest,
+			false,
+		))
+	}
+
+	contacts, err := a.contactRepo.GetContactByCakupan(body.GedungID, body.Role)
 	if err != nil {
-		return c.JSON(fiber.Map{
-			"messages": errors.New("gedung_id must be integer"),
-			"code":     fiber.StatusInternalServerError,
+		return c.Status(fiber.StatusInternalServerError).JSON(NewResponseWithoutData(
+			"failed get list contacts: "+err.Error(),
+			fiber.StatusInternalServerError,
+			false,
+		))
+	}
+
+	users := make([]GetContactByCakupanResponse, 0)
+	for _, v := range contacts {
+		users = append(users, GetContactByCakupanResponse{
+			ID:          v.ID,
+			Name:        v.Name,
+			Email:       v.Email,
+			PhoneNumber: v.PhoneNumber,
+			AvatarURL:   v.AvatarURL,
+			KotaID:      v.KotaID,
+			GedungID:    v.GedungID,
+			IsOnline:    v.IsOnline,
 		})
 	}
 
-	response, err := a.contactRepo.GetContactByCakupan(gedungId, c.Query("role", ""))
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
-			"code":  fiber.StatusInternalServerError,
-		})
-	}
-
-	return c.JSON(fiber.Map{
-		"data":    response,
-		"status":  true,
-		"message": "success get list contacts",
-		"code":    fiber.StatusOK,
-	})
+	return c.JSON(NewBaseResponse(
+		true,
+		"success get list contacts",
+		fiber.StatusOK,
+		users,
+	))
 }
